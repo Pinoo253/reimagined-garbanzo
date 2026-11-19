@@ -1,0 +1,21 @@
+(() => {
+ const $=s=>document.querySelector(s),cfg=window.ADB_CONFIG||{};
+ const client=cfg.SUPABASE_URL&&cfg.SUPABASE_ANON_KEY?supabase.createClient(cfg.SUPABASE_URL,cfg.SUPABASE_ANON_KEY):null;
+ let current="projects",rows=[];
+ const fields={projects:["title","description","creator","image_url"],activities:["title","description","location","cover_url"],gallery:["title","","media_type","url"],categories:["name","","type",""],feedback:["name","message","type",""]};
+ const names={projects:"Projects",activities:"Activities",gallery:"Gallery",categories:"Categories",feedback:"Feedback"};
+ const toast=m=>{const t=$("#toast");t.textContent=m;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),3000)};
+ if(!client){$("#login-status").textContent="Isi SUPABASE_URL dan SUPABASE_ANON_KEY pada config.js terlebih dahulu.";return;}
+ client.auth.getSession().then(({data})=>{if(data.session)showPanel(data.session.user)});
+ $("#login-form").addEventListener("submit",async e=>{e.preventDefault();const fd=new FormData(e.currentTarget);$("#login-status").textContent="Signing in...";const {data,error}=await client.auth.signInWithPassword({email:fd.get("email"),password:fd.get("password")});if(error){$("#login-status").textContent=error.message;return;}showPanel(data.user)});
+ async function showPanel(user){$("#login-view").hidden=true;$("#panel-view").hidden=false;$("#admin-user").textContent=user.email;await load();}
+ $("#logout").onclick=async()=>{await client.auth.signOut();location.reload()};
+ document.querySelectorAll("[data-table]").forEach(b=>b.onclick=()=>{current=b.dataset.table;document.querySelectorAll("[data-table]").forEach(x=>x.classList.toggle("active",x===b));configure();load()});
+ function configure(){const f=fields[current];$("#table-title").textContent=names[current];$("#content-form").hidden=current==="feedback";$("#content-form").reset();$("#description-label").hidden=!f[1];$("#extra-label").hidden=!f[2];$("#url-label").hidden=!f[3];$("#content-form [name=title]").required=current!=="categories";$("#content-form [name=title]").previousElementSibling&&( $("#content-form [name=title]").previousElementSibling.textContent=current==="categories"?"Category name":"Title");}
+ async function load(){configure();$("#records").innerHTML="Loading...";const {data,error}=await client.from(current).select("*").order("created_at",{ascending:false}).limit(100);if(error){$("#records").textContent=error.message;return;}rows=data||[];$("#records").innerHTML=rows.map((r,i)=>`<div class="record"><div><b>${esc(r.title||r.name||"(untitled)")}</b><small>${esc(r.description||r.message||r.type||r.date||"")}</small></div><div>${current==="feedback"?"":`<button data-edit="${i}">Edit</button>`}<button data-delete="${i}">Delete</button></div></div>`).join("")||'<p class="admin-muted">No records yet.</p>';$("#records").querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>edit(rows[+b.dataset.edit]));$("#records").querySelectorAll("[data-delete]").forEach(b=>b.onclick=()=>remove(rows[+b.dataset.delete]));}
+ function edit(r){const f=fields[current],form=$("#content-form");form.elements.id.value=r.id;form.elements.title.value=r[f[0]]||"";form.elements.description.value=r[f[1]]||"";form.elements.extra.value=r[f[2]]||"";form.elements.url.value=r[f[3]]||"";form.scrollIntoView({behavior:"smooth",block:"center"});}
+ $("#cancel-edit").onclick=()=>$("#content-form").reset();
+ $("#content-form").onsubmit=async e=>{e.preventDefault();const fd=new FormData(e.currentTarget),f=fields[current],payload={};if(current==="categories"){payload.name=fd.get("title");payload.type=fd.get("extra")||"project";}else{payload[f[0]]=fd.get("title");if(f[1])payload[f[1]]=fd.get("description");if(f[2])payload[f[2]]=fd.get("extra");if(f[3])payload[f[3]]=fd.get("url");}const id=fd.get("id");const q=id?client.from(current).update(payload).eq("id",id):client.from(current).insert(payload);const {error}=await q;if(error){toast(error.message);return;}toast("Saved.");e.currentTarget.reset();load();};
+ async function remove(r){if(!confirm("Delete this record?"))return;const {error}=await client.from(current).delete().eq("id",r.id);if(error){toast(error.message);return;}toast("Deleted.");load();}
+ function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+})();
